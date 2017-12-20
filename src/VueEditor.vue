@@ -1,6 +1,7 @@
 <template>
     <div class="quillWrapper">
         <div ref="quillContainer" :id="id"></div>
+        <div v-if="counterLimit" class="quillCounter" :id="id+'counter'"></div>
         <input v-if="useCustomImageHandler" @change="emitImageInfo($event)" ref="fileInput" id="file-upload" type="file"
                style="display:none;">
     </div>
@@ -27,41 +28,62 @@
         ['clean']
     ]
 
-    var Counter = function (quill, options) {
-        this.quill = quill;
-        this.options = options;
-        this.container = document.querySelector(options.container);
-        quill.on('text-change', this.update.bind(this));
-        this.update();  // Account for initial contents
-    };
-
-    Counter.prototype.calculate = function () {
-        var text = this.quill.getText();
-        if (this.options.unit === 'word') {
-            text = text.trim();
-            // Splitting empty text returns a non-empty array
-            return text.length > 0 ? text.split(/\s+/).length : 0;
-        } else {
-            return text.length;
+    class Counter {
+        constructor(quill, options) {
+            this.quill = quill;
+            this.options = options;
+            this.container = document.querySelector(options.container);
+            quill.on('text-change', this.update.bind(this));
+            this.update();  // Account for initial contents
         }
-    };
 
-    Counter.prototype.update = function () {
-        var length = this.calculate();
-        var label = this.options.unit;
-        if (length !== 1) {
+        calculate() {
+            let text = this.quill.getText();
+            let length = 0;
+            if (this.options.unit === 'word') {
+                text = text.trim();
+                // Splitting empty text returns a non-empty array
+                length = text.length > 0 ? text.split(/\s+/).length : 0;
+            } else {
+                length = text.length - 1;
+            }
+            if (length > this.options.limit) {
+                if (this.options.unit === 'word') {
+                    this.quill.setText(text.split(/\s+/).slice(0, this.options.limit).join(" "))
+                    text = this.quill.getText().trim();
+                    length = text.length > 0 ? text.split(/\s+/).length : 0;
+                }
+                else {
+                    this.quill.deleteText(this.options.limit, length);
+                    length = this.quill.getLength() - 1;
+                }
+            }
+            return length;
+        }
+
+        update() {
+            var length = this.calculate();
+            var label = this.options.unit;
+            // if (length !== 1) {
             label += 's';
+            // }
+            this.container.innerText = length + ' / ' + this.options.limit + ' ' + label;
         }
-        this.container.innerHTML = length + ' ' + label;
     }
 
-    Quill.registerModule('counter', Counter);
+    Quill.register('modules/counter', Counter);
 
     export default {
         name: 'vue-editor',
         props: {
-            counterLimit: 0,
-            counterType: 'word',
+            counterLimit: {
+                type: Number,
+                default: 0,
+            },
+            counterType: {
+                type: String,
+                default: 'word'
+            },
             value: String,
             id: {
                 type: String,
@@ -108,20 +130,23 @@
             },
 
             setQuillElement() {
+                var modules = {
+                    toolbar: this.toolbar
+                };
+                if (this.counterLimit) {
+                    Quill.register('modules/counter', Counter);
+                    modules.counter = {
+                        container: '#' + this.id + 'counter',
+                        unit: this.counterType,
+                        limit: this.counterLimit,
+                    }
+                }
                 this.quill = new Quill(this.$refs.quillContainer, {
-                    modules: {
-                        toolbar: this.toolbar
-                    },
+                    modules: modules,
                     placeholder: this.placeholder ? this.placeholder : '',
                     theme: 'snow',
                     readOnly: this.disabled ? this.disabled : false,
                 })
-                if (this.counterLimit) {
-                    var counter = quill.addModule('counter', {
-                        container: '#counter',
-                        unit: this.counterType,
-                    });
-                }
                 this.checkForCustomImageHandler()
             },
 
@@ -166,7 +191,7 @@
 <style>
     .ql-editor {
         min-height: 200px;
-        font-size: 16px;
+        /*font-size: 16px;*/
     }
 
     .ql-snow .ql-thin, .ql-snow .ql-stroke.ql-thin {
@@ -217,4 +242,13 @@
     .quillWrapper .ql-toolbar.ql-snow .ql-formats {
         vertical-align: top;
     }
+
+    .quillWrapper .quillCounter {
+        border: 1px solid #ccc;
+        border-width: 0px 1px 1px 1px;
+        color: #aaa;
+        padding: 5px 15px;
+        text-align: right;
+    }
+
 </style>
